@@ -70,8 +70,11 @@ async function processWebhook(payload) {
                 rawPhone: rawPhoneNumber,
                 erros: 0,
                 empresaId: empresaId_atual,
+                instanceName: instanceName,
             };
         }
+
+        userStates[anonId].instanceName = instanceName
 
         const respostas = await handleConversation(anonId, text);
 
@@ -80,17 +83,19 @@ async function processWebhook(payload) {
             for (const msg of mensagens) {
                 if (typeof msg === "string") {
                     const textoFinal = botMessages[msg] || msg;
-                    await sendWhatsappMessage(rawPhoneNumber, textoFinal);
+                    await sendWhatsappMessage(rawPhoneNumber, textoFinal, instanceName);
                 } else if (typeof msg === "object") {
                     if (msg.type === "buttons") {
                         await sendWhatsappButtons(
                             rawPhoneNumber,
                             msg.payloadBuilder(rawPhoneNumber),
+                            instanceName
                         );
                     } else if (msg.type === "list") {
                         await sendWhatsappList(
                             rawPhoneNumber,
                             msg.payloadBuilder(rawPhoneNumber),
+                            instanceName
                         );
                     }
                 }
@@ -366,7 +371,7 @@ async function handleConversation(anonymizedId, text) {
         if (session.step === "POS_RELATO") {
             if (text === "btn_nova_denuncia") {
                 const categoryData = await getCategories(session.empresaId);
-                if (!categoryData) return "ERRO BANCO";
+                if (!categoryData) return "ERRO_BANCO";
                 session.step = "SELECIONANDO_CATEGORIA";
 
                 return {
@@ -478,13 +483,15 @@ async function getTicket(protocol) {
     }
 }
 
-async function sendWhatsappMessage(phoneNumber, messageText) {
+async function sendWhatsappMessage(phoneNumber, messageText, instanceName) {
     try {
-        const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendText/${process.env.EVOLUTION_INSTANCE_NAME}`;
+        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendText/${instancia}`;
+        console.log(`[EVOLUTION] Disparo via instância: ${instancia}`)
 
         const payloadEvolution = {
             number: phoneNumber,
-            options: {delay: 1200, presence: "composing"},
+            options: {delay: 800, presence: "composing"},
             text: messageText,
         };
 
@@ -504,9 +511,10 @@ async function sendWhatsappMessage(phoneNumber, messageText) {
     }
 }
 
-async function sendWhatsappButtons(phoneNumber, payload) {
+async function sendWhatsappButtons(phoneNumber, payload, instanceName) {
     try {
-        const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendButtons/${process.env.EVOLUTION_INSTANCE_NAME}`;
+        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendButtons/${instanceName}`;
 
         const response = await fetch(endpoint, {
             method: "POST",
@@ -530,9 +538,10 @@ async function sendWhatsappButtons(phoneNumber, payload) {
     }
 }
 
-async function sendWhatsappList(phoneNumber, payload) {
+async function sendWhatsappList(phoneNumber, payload, instanceName) {
     try {
-        const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendList/${process.env.EVOLUTION_INSTANCE_NAME}`;
+        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendList/${instancia}`;
 
         const response = await fetch(endpoint, {
             method: "POST",
@@ -604,6 +613,8 @@ async function createTicket(empresaId, categoryId, text, ticketProtocolo) {
 
 async function execTimeout(anonId, rawPhoneNumber) {
     try {
+        const instanceName = userStates[anonId]?.instanceName || process.env.EVOLUTION_INSTANCE_NAME
+
         delete userTimers[anonId];
         const stepAnterior = userStates[anonId]?.step;
         delete userStates[anonId];
@@ -619,7 +630,7 @@ async function execTimeout(anonId, rawPhoneNumber) {
         }
 
         const textoFinal = botMessages[mensagemChave] || mensagemChave;
-        await sendWhatsappMessage(rawPhoneNumber, textoFinal);
+        await sendWhatsappMessage(rawPhoneNumber, textoFinal, instanceName);
     } catch (error) {
         console.error(
             `[ERRO TIMEOUT] Falha na inatividade de ${rawPhoneNumber}:`,
@@ -632,13 +643,13 @@ function defTimeout(anonId, rawPhoneNumber, stepAtual) {
     if (!userStates[anonId]) {
         if (userTimers[anonId]) {
             clearTimeout(userTimers[anonId]);
-            delete userTimers[annonId];
+            delete userTimers[anonId];
         }
         return;
     }
 
     const tempoLimite =
-        stepAtual === "ESCREVENDO_RELADO" ? TIMEOUT_RELATO : TIMEOUT_PADRAO;
+        stepAtual === "ESCREVENDO_RELATO" ? TIMEOUT_RELATO : TIMEOUT_PADRAO;
 
     if (userTimers[anonId]) {
         clearTimeout(userTimers[anonId]);

@@ -3,6 +3,8 @@ const {processWebhook} = require("./functions");
 const {exec} = require("child_process");
 const app = express(); // Ativa o servidor
 
+const evolution = require('./lib/evolution.js')
+
 app.use(express.json());
 
 app.post("/webhook", async (req, res) => {
