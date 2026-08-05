@@ -436,7 +436,7 @@ async function getEmpresa(instanceName) {
             .from("empresas")
             .select("id, status")
             .eq("instance_name", instanceName)
-            .single();
+            .maybeSingle();
         if (error) {
             console.error(error.message);
             return null;
