@@ -7,7 +7,8 @@ const {
     buildMenuPayload,
     buildCategoryListPayload,
     buildConfirmarRelatoPayload,
-    buildCopyTicketPayload, buildPosRelatoButtonsPayload,
+    buildCopyTicketPayload,
+    buildPosRelatoButtonsPayload,
 } = require("./utils/messageBuilder");
 
 const userStates = {};
@@ -18,6 +19,8 @@ const TIMEOUT_RELATO = 25 * 60 * 1000;
 
 // const TIMEOUT_PADRAO = 10 * 1000;
 // const TIMEOUT_RELATO = 20 * 1000;
+
+const EVOLUTION_KEY = process.env.EVOLUTION_GLOBAL_API_KEY;
 
 async function processWebhook(payload) {
     let empresaId_atual;
@@ -33,15 +36,11 @@ async function processWebhook(payload) {
         if (userTimers[anonId]) {
             clearTimeout(userTimers[anonId]);
             delete userTimers[anonId];
-            console.log(
-                `[TIMER] Relógio cancelado para ${rawPhoneNumber} devido a nova interação.`,
-            );
+            console.log(`[TIMER] Relógio cancelado para ${rawPhoneNumber} devido a nova interação.`);
         }
 
         console.log(`\n======================================================`);
-        console.log(
-            `[WEBHOOK] 📩 Nova interação de ${rawPhoneNumber} na instância [${instanceName}]`,
-        );
+        console.log(`[WEBHOOK] 📩 Nova interação de ${rawPhoneNumber} na instância [${instanceName}]`);
         console.log(`[EXTRAÇÃO] Comando recebido: ${text}`);
 
         const sessionExists = !!userStates[anonId];
@@ -74,7 +73,7 @@ async function processWebhook(payload) {
             };
         }
 
-        userStates[anonId].instanceName = instanceName
+        userStates[anonId].instanceName = instanceName;
 
         const respostas = await handleConversation(anonId, text);
 
@@ -86,17 +85,9 @@ async function processWebhook(payload) {
                     await sendWhatsappMessage(rawPhoneNumber, textoFinal, instanceName);
                 } else if (typeof msg === "object") {
                     if (msg.type === "buttons") {
-                        await sendWhatsappButtons(
-                            rawPhoneNumber,
-                            msg.payloadBuilder(rawPhoneNumber),
-                            instanceName
-                        );
+                        await sendWhatsappButtons(rawPhoneNumber, msg.payloadBuilder(rawPhoneNumber), instanceName);
                     } else if (msg.type === "list") {
-                        await sendWhatsappList(
-                            rawPhoneNumber,
-                            msg.payloadBuilder(rawPhoneNumber),
-                            instanceName
-                        );
+                        await sendWhatsappList(rawPhoneNumber, msg.payloadBuilder(rawPhoneNumber), instanceName);
                     }
                 }
             }
@@ -120,9 +111,7 @@ function extractData(payload) {
 
         let interactiveBtnId = null;
         try {
-            const paramsJson =
-                payload.data.message?.interactiveResponseMessage
-                    ?.nativeFlowResponseMessage?.paramsJson;
+            const paramsJson = payload.data.message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson;
             if (paramsJson) {
                 interactiveBtnId = JSON.parse(paramsJson).id;
             }
@@ -133,21 +122,16 @@ function extractData(payload) {
         const buttonResponse =
             payload.data.message?.buttonsResponseMessage?.selectedButtonId ||
             payload.data.message?.templateButtonReplyMessage?.selectedId ||
-            payload.data.message?.listResponseMessage?.singleSelectReply
-                ?.selectedRowId ||
+            payload.data.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
             interactiveBtnId;
 
         const textResponse =
-            payload.data.message?.conversation ||
-            payload.data.message?.extendedTextMessage?.text ||
-            "";
+            payload.data.message?.conversation || payload.data.message?.extendedTextMessage?.text || "";
 
         const finalInteraction = buttonResponse || textResponse;
         const phoneNumber = remoteJid.split("@")[0];
 
-        console.log(
-            `[EXTRAÇÃO] Comando recebido de ${phoneNumber}: ${finalInteraction}`,
-        );
+        console.log(`[EXTRAÇÃO] Comando recebido de ${phoneNumber}: ${finalInteraction}`);
 
         return {
             phoneNumber: phoneNumber,
@@ -162,10 +146,7 @@ function extractData(payload) {
 function anonymizeUser(phoneNumber) {
     try {
         const salt = process.env.SALT || "salt_emergencia";
-        const fullHash = crypto
-            .createHmac("sha256", salt)
-            .update(phoneNumber)
-            .digest("hex");
+        const fullHash = crypto.createHmac("sha256", salt).update(phoneNumber).digest("hex");
         return fullHash.substring(0, 8);
     } catch (error) {
         console.log("Erro na anonimização: ", error.message);
@@ -202,8 +183,8 @@ async function handleConversation(anonymizedId, text) {
                     "TERMOS_LGPD_COMPLETOS",
                     {
                         type: "buttons",
-                        payloadBuilder: buildLgpdPayload()
-                    }
+                        payloadBuilder: buildLgpdPayload(),
+                    },
                 ];
             } else {
                 session.erros += 1;
@@ -226,8 +207,7 @@ async function handleConversation(anonymizedId, text) {
 
                 return {
                     type: "list",
-                    payloadBuilder: (numero) =>
-                        buildCategoryListPayload(numero, categoryData.rawCategories),
+                    payloadBuilder: numero => buildCategoryListPayload(numero, categoryData.rawCategories),
                 };
             } else if (text === "btn_consultar_ticket") {
                 session.step = "DIGITANDO_PROTOCOLO";
@@ -285,9 +265,9 @@ async function handleConversation(anonymizedId, text) {
             let mensagemRetorno = `🔎 *Consulta do Protocolo: ${userTicket}*\n\n`;
 
             registros.forEach((registro, index) => {
-                const dataFormatada = new Date(registro.data_registro).toLocaleDateString('pt-BR');
+                const dataFormatada = new Date(registro.data_registro).toLocaleDateString("pt-BR");
                 mensagemRetorno += `*Atualização ${index + 1} (${dataFormatada}):*\n`;
-                mensagemRetorno += `${registro.texto}\n\n`
+                mensagemRetorno += `${registro.texto}\n\n`;
             });
 
             session.step = "POS_RELATO";
@@ -296,8 +276,8 @@ async function handleConversation(anonymizedId, text) {
                 mensagemRetorno,
                 {
                     type: "buttons",
-                    payloadBuilder: (numero) => buildPosRelatoButtonsPayload(numero)
-                }
+                    payloadBuilder: numero => buildPosRelatoButtonsPayload(numero),
+                },
             ];
         }
 
@@ -312,8 +292,7 @@ async function handleConversation(anonymizedId, text) {
 
             return {
                 type: "buttons",
-                payloadBuilder: (numero) =>
-                    buildConfirmarRelatoPayload(numero, session.relatoProvisorio),
+                payloadBuilder: numero => buildConfirmarRelatoPayload(numero, session.relatoProvisorio),
             };
         }
 
@@ -342,13 +321,12 @@ async function handleConversation(anonymizedId, text) {
                     return [
                         {
                             type: "buttons",
-                            payloadBuilder: (numero) =>
-                                buildCopyTicketPayload(numero, ticketProtocolo),
+                            payloadBuilder: numero => buildCopyTicketPayload(numero, ticketProtocolo),
                         },
                         {
                             type: "buttons",
-                            payloadBuilder: (numero) => buildPosRelatoButtonsPayload(numero)
-                        }
+                            payloadBuilder: numero => buildPosRelatoButtonsPayload(numero),
+                        },
                     ];
                 } else {
                     return "ERRO_SISTEMA";
@@ -376,7 +354,7 @@ async function handleConversation(anonymizedId, text) {
 
                 return {
                     type: "list",
-                    payloadBuilder: (numero) => buildCategoryListPayload(numero, categoryData.rawCategories)
+                    payloadBuilder: numero => buildCategoryListPayload(numero, categoryData.rawCategories),
                 };
             } else if (text === "btn_consultar_ticket") {
                 session.step = "DIGITANDO_PROTOCOLO";
@@ -393,7 +371,6 @@ async function handleConversation(anonymizedId, text) {
                 return "POR_FAVOR_USE_OS_BOTOES";
             }
         }
-
     } catch (error) {
         console.log("Erro na Máquina de Estados:", error.message);
         return "ERRO_SISTEMA";
@@ -402,7 +379,7 @@ async function handleConversation(anonymizedId, text) {
 
 async function getCategories(empresaId) {
     try {
-        const {data, error} = await supabase
+        const { data, error } = await supabase
             .from("categorias")
             .select("id, name")
             .eq("empresa_id", empresaId)
@@ -413,9 +390,9 @@ async function getCategories(empresaId) {
             return null;
         }
 
-        const validIDs = data.map((cat) => String(cat.id));
+        const validIDs = data.map(cat => String(cat.id));
 
-        const rawCategories = data.map((cat) => ({
+        const rawCategories = data.map(cat => ({
             id: cat.id,
             nome: cat.name,
         }));
@@ -432,7 +409,7 @@ async function getCategories(empresaId) {
 
 async function getEmpresa(instanceName) {
     try {
-        const {data, error} = await supabase
+        const { data, error } = await supabase
             .from("empresas")
             .select("id, status")
             .eq("instance_name", instanceName)
@@ -443,16 +420,12 @@ async function getEmpresa(instanceName) {
         }
 
         if (!data) {
-            console.log(
-                `[ROTEAMENTO] Nenhuma empresa encontrada para a instância: ${instanceName}`,
-            );
+            console.log(`[ROTEAMENTO] Nenhuma empresa encontrada para a instância: ${instanceName}`);
             return null;
         }
 
         if (data.status === false) {
-            console.log(
-                `[ROTEAMENTO] Instância ${instanceName} pertence a uma empresa inativa.`,
-            );
+            console.log(`[ROTEAMENTO] Instância ${instanceName} pertence a uma empresa inativa.`);
             return null;
         }
 
@@ -465,13 +438,15 @@ async function getEmpresa(instanceName) {
 
 async function getTicket(protocol) {
     try {
-        const {data, error} = await supabase
+        const { data, error } = await supabase
             .from("registro_chamados")
-            .select(`
+            .select(
+                `
                 *,
                 chamados!inner(protocol)
-            `)
-            .eq(`chamados.protocol`, protocol)
+            `,
+            )
+            .eq(`chamados.protocol`, protocol);
         if (error) {
             console.error("[ERRO TICKET DB] Erro ao buscar registros: ", error.message);
             return null;
@@ -485,13 +460,13 @@ async function getTicket(protocol) {
 
 async function sendWhatsappMessage(phoneNumber, messageText, instanceName) {
     try {
-        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME;
         const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendText/${instancia}`;
-        console.log(`[EVOLUTION] Disparo via instância: ${instancia}`)
+        console.log(`[EVOLUTION] Disparo via instância: ${instancia}`);
 
         const payloadEvolution = {
             number: phoneNumber,
-            options: {delay: 800, presence: "composing"},
+            options: { delay: 800, presence: "composing" },
             text: messageText,
         };
 
@@ -499,7 +474,7 @@ async function sendWhatsappMessage(phoneNumber, messageText, instanceName) {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                apikey: process.env.EVOLUTION_API_KEY,
+                apikey: EVOLUTION_KEY,
             },
             body: JSON.stringify(payloadEvolution),
         });
@@ -513,23 +488,21 @@ async function sendWhatsappMessage(phoneNumber, messageText, instanceName) {
 
 async function sendWhatsappButtons(phoneNumber, payload, instanceName) {
     try {
-        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME;
         const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendButtons/${instanceName}`;
 
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                apikey: process.env.EVOLUTION_API_KEY,
+                apikey: EVOLUTION_KEY,
             },
             body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
             const errorData = await response.text();
-            console.error(
-                `[EVOLUTION API] Falha ao enviar botões: Status ${response.status} - ${errorData}`,
-            );
+            console.error(`[EVOLUTION API] Falha ao enviar botões: Status ${response.status} - ${errorData}`);
         }
         return response.ok;
     } catch (error) {
@@ -540,23 +513,21 @@ async function sendWhatsappButtons(phoneNumber, payload, instanceName) {
 
 async function sendWhatsappList(phoneNumber, payload, instanceName) {
     try {
-        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const instancia = instanceName || process.env.EVOLUTION_INSTANCE_NAME;
         const endpoint = `${process.env.EVOLUTION_API_URL}/message/sendList/${instancia}`;
 
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                apikey: process.env.EVOLUTION_API_KEY,
+                apikey: EVOLUTION_KEY,
             },
             body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
             const errorData = await response.text();
-            console.error(
-                `[EVOLUTION API] Falha ao enviar lista: Status ${response.status} - ${errorData}`,
-            );
+            console.error(`[EVOLUTION API] Falha ao enviar lista: Status ${response.status} - ${errorData}`);
         }
         return response.ok;
     } catch (error) {
@@ -569,7 +540,7 @@ async function createTicket(empresaId, categoryId, text, ticketProtocolo) {
     try {
         console.log(`[DB] Gravando chamado ${ticketProtocolo}.`);
 
-        const {data: chamado, error: supabaseError1} = await supabase
+        const { data: chamado, error: supabaseError1 } = await supabase
             .from("chamados")
             .insert([
                 {
@@ -588,15 +559,13 @@ async function createTicket(empresaId, categoryId, text, ticketProtocolo) {
             return false;
         }
 
-        const {error: supabaseError2} = await supabase
-            .from("registro_chamados")
-            .insert([
-                {
-                    id_chamado: chamado.id,
-                    texto: "Denúncia registrada via Whatsapp",
-                    tipo_acao: "ABERTURA_SISTEMA",
-                },
-            ]);
+        const { error: supabaseError2 } = await supabase.from("registro_chamados").insert([
+            {
+                id_chamado: chamado.id,
+                texto: "Denúncia registrada via Whatsapp",
+                tipo_acao: "ABERTURA_SISTEMA",
+            },
+        ]);
 
         if (supabaseError2) {
             console.error("[ERRO SUPABASE - REGISTROS] ", supabaseError2);
@@ -613,7 +582,7 @@ async function createTicket(empresaId, categoryId, text, ticketProtocolo) {
 
 async function execTimeout(anonId, rawPhoneNumber) {
     try {
-        const instanceName = userStates[anonId]?.instanceName || process.env.EVOLUTION_INSTANCE_NAME
+        const instanceName = userStates[anonId]?.instanceName || process.env.EVOLUTION_INSTANCE_NAME;
 
         delete userTimers[anonId];
         const stepAnterior = userStates[anonId]?.step;
@@ -632,10 +601,7 @@ async function execTimeout(anonId, rawPhoneNumber) {
         const textoFinal = botMessages[mensagemChave] || mensagemChave;
         await sendWhatsappMessage(rawPhoneNumber, textoFinal, instanceName);
     } catch (error) {
-        console.error(
-            `[ERRO TIMEOUT] Falha na inatividade de ${rawPhoneNumber}:`,
-            error.message,
-        );
+        console.error(`[ERRO TIMEOUT] Falha na inatividade de ${rawPhoneNumber}:`, error.message);
     }
 }
 
@@ -648,18 +614,17 @@ function defTimeout(anonId, rawPhoneNumber, stepAtual) {
         return;
     }
 
-    const tempoLimite =
-        stepAtual === "ESCREVENDO_RELATO" ? TIMEOUT_RELATO : TIMEOUT_PADRAO;
+    const tempoLimite = stepAtual === "ESCREVENDO_RELATO" ? TIMEOUT_RELATO : TIMEOUT_PADRAO;
 
     if (userTimers[anonId]) {
         clearTimeout(userTimers[anonId]);
     }
 
     userTimers[anonId] = setTimeout(() => {
-        execTimeout(anonId, rawPhoneNumber).catch((err) => {
+        execTimeout(anonId, rawPhoneNumber).catch(err => {
             console.error(`[ERRO TIMEOUT] Falha ao executar limpeza para ${rawPhoneNumber}: `, err.message);
         });
     }, tempoLimite);
 }
 
-module.exports = {processWebhook};
+module.exports = { processWebhook };
