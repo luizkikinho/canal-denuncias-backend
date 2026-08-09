@@ -1,11 +1,46 @@
 const express = require("express");
-const {processWebhook} = require("./functions");
-const {exec} = require("child_process");
+const { processWebhook } = require("./functions");
+const { exec } = require("child_process");
 const app = express(); // Ativa o servidor
 
-const evolution = require('./lib/evolution.js')
+const supabase = require("./db");
+const evolution = require("./lib/evolution.js");
 
 app.use(express.json());
+
+app.post("/provisionar/:empresaId", async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${process.env.PROVISION_SECRET}`) {
+        return res.status(401).json({ error: "Não autorizado" });
+    }
+
+    const empresaId = req.params.empresaId;
+
+    const { data: empresa, error: errEmpresa } = await supabase
+        .from("empresas")
+        .select("id, instance_name")
+        .eq("id", empresaId)
+        .maybeSingle();
+
+    if (errEmpresa || !empresa) return res.status(404).json({ error: "Empresa não encontrada" });
+    if (empresa.instance_name) {
+        return res.status(409).json({ error: "Empresa já possui instância", instance_name: empresa.instance_name });
+    }
+
+    const { instanceName } = await evolution.createInstance({ companyId: empresaId });
+
+    const { error: errUpdate } = await supabase
+        .from("empresas")
+        .update({ instance_name: instanceName, whatsapp_status: "awaiting_qr" })
+        .eq("id", empresaId);
+
+    if (errUpdate) {
+        await evolution.deleteInstance(instanceName);
+        return res.status(500).json({ error: "Falha ao vincular instância à empresa :(" });
+    }
+
+    const qrBase64 = await evolution.getQrCode(instanceName);
+    res.json({ instanceName, qrBase64 });
+});
 
 app.post("/webhook", async (req, res) => {
     const result = await processWebhook(req.body);
@@ -15,17 +50,14 @@ app.post("/webhook", async (req, res) => {
 app.post("/deploy-hook", (req, res) => {
     console.log("[DEPLOY] Recebido sinal do GitHub. Baixando atualizações...");
     res.status(200).send("Deploy iniciado.");
-    exec(
-        "git pull origin main && pm2 restart whatsapp-bot",
-        (err, stdout) => {
-            if (err) {
-                console.error(`[DEPLOY ERRO] ${err}`);
-                return;
-            }
-            console.log(`[DEPLOY SUCESSO] Sistema atualizado e reiniciado!`);
-            if (stdout) console.log(`[OUTPUT] ${stdout}`);
-        },
-    );
+    exec("git pull origin main && pm2 restart whatsapp-bot", (err, stdout) => {
+        if (err) {
+            console.error(`[DEPLOY ERRO] ${err}`);
+            return;
+        }
+        console.log(`[DEPLOY SUCESSO] Sistema atualizado e reiniciado!`);
+        if (stdout) console.log(`[OUTPUT] ${stdout}`);
+    });
 });
 
 const PORT = 8000;
