@@ -80,7 +80,7 @@ app.post("/deploy-hook", (req, res) => {
     });
 });
 
-app.post("/qr/:empresaId", async (req, res) => {
+app.get("/qr/:empresaId", async (req, res) => {
     if (req.headers.authorization !== `Bearer ${process.env.PROVISION_SECRET}`) {
         return res.status(401).json({ error: "Unauthorized" });
     }
