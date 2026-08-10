@@ -80,6 +80,31 @@ app.post("/deploy-hook", (req, res) => {
     });
 });
 
+app.post("/qr/:empresaId", async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${process.env.PROVISION_SECRET}`) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+        const { data: empresa, error } = await supabase
+            .from("empresas")
+            .select("instance_name, status")
+            .eq("id", req.params.empresaId)
+            .single();
+        if (error || !empresa?.instance_name)
+            return res.status(404).json({ error: "Empresa ou instância não encontrada..." });
+        if (empresa.status === false)
+            return res.status(409).json({ error: "Empresa desativada. Reative antes de conectar." });
+
+        const qrBase64 = await evolution.getQrCode(empresa.instance_name);
+        if (!qrBase64) return res.status(409).json({ error: "Instância já conectada." });
+
+        return res.status(200).json({ qrBase64 });
+    } catch (error) {
+        console.error("[QR]", error.message);
+        return res.status(500).json({ error: "Falha ao obter QR" });
+    }
+});
+
 const PORT = 8000;
 app.listen(PORT, () => {
     console.log(`Servidor de triagem iniciado na porta ${PORT}...\n`);
