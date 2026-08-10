@@ -44,6 +44,24 @@ app.post("/provisionar/:empresaId", async (req, res) => {
 
 app.post("/webhook", async (req, res) => {
     const result = await processWebhook(req.body);
+
+    const evento = payload?.event;
+    if (evento === "connection.update" || evento === "CONNECTION_UPDATE") {
+        const instanceName = payload?.instance ?? payload?.data?.instance;
+        const state = payload?.data?.state;
+
+        if (instanceName && state) {
+            const novoStatus = state === "open" ? "connected" : state === "close" ? "awaiting_qr" : null;
+            if (novoStatus) {
+                const { error } = await supabase
+                    .from("empresas")
+                    .update({ whatsapp_status: novoStatus })
+                    .eq("instance_name", instanceName);
+                console.log(`[WEBHOOK] 📶 ${instanceName} → ${novoStatus}${error ? " | ERRO: " + error.message : ""}`);
+            }
+        }
+    }
+
     res.status(200).json(result);
 });
 
