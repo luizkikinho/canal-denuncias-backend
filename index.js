@@ -43,7 +43,7 @@ app.post("/provisionar/:empresaId", async (req, res) => {
 });
 
 app.post("/webhook", async (req, res) => {
-    const result = await processWebhook(req.body);
+    const payload = req.body;
 
     const evento = payload?.event;
     if (evento === "connection.update" || evento === "CONNECTION_UPDATE") {
@@ -60,8 +60,10 @@ app.post("/webhook", async (req, res) => {
                 console.log(`[WEBHOOK] 📶 ${instanceName} → ${novoStatus}${error ? " | ERRO: " + error.message : ""}`);
             }
         }
+        return res.status(200).json({ ok: true }); // ← early return
     }
 
+    const result = await processWebhook(payload);
     res.status(200).json(result);
 });
 
