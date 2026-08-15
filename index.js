@@ -8,6 +8,10 @@ const evolution = require("./lib/evolution.js");
 
 app.use(express.json());
 
+app.get("/health", (req, res) => {
+    res.status(200).json({status: "ok", uptime: process.uptime()})
+})
+
 app.post("/provisionar/:empresaId", async (req, res) => {
     if (req.headers.authorization !== `Bearer ${process.env.PROVISION_SECRET}`) {
         return res.status(401).json({ error: "Não autorizado" });
