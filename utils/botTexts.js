@@ -1,4 +1,5 @@
 const supabase = require("../db"); // ajuste ao export do seu db.js
+const botMessages = require("../messages");
 
 // Fonte única de verdade: todo texto que o usuário final lê
 const DEFAULT_TEXTS = {
@@ -29,6 +30,22 @@ const DEFAULT_TEXTS = {
 
   pos_relato_title: "O que fazer agora?",
   pos_relato_footer: "Canal de Denúncias Seguro",
+
+  // Mensagens de fluxo simples (texto puro) — fallback dos textos padrão
+  welcome: botMessages.WELCOME_HEADER,
+  termos_completos: botMessages.TERMOS_LGPD_COMPLETOS,
+  cancelada: botMessages.OPERACAO_CANCELADA,
+  pedir_relato: botMessages.PEDIR_RELATO,
+  relato_curto: botMessages.RELATO_MUITO_CURTO,
+  pedir_relato_novamente: botMessages.PEDIR_RELATO_NOVAMENTE,
+  pedir_protocolo: botMessages.PEDIR_PROTOCOLO_CONSULTA,
+  despedida: botMessages.MENSAGEM_DESPEDIDA,
+  use_os_botoes: botMessages.POR_FAVOR_USE_OS_BOTOES,
+  use_a_lista: botMessages.POR_FAVOR_USE_A_LISTA,
+  ticket_nao_encontrado: botMessages.TICKET_NAO_ENCONTRADO,
+  limite_erros: botMessages.LIMITE_ERROS,
+  erro_banco: botMessages.ERRO_BANCO,
+  erro_sistema: botMessages.ERRO_SISTEMA,
 };
 
 // "Tem texto próprio? Usa. Não tem? Usa o padrão."

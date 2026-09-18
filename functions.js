@@ -24,11 +24,34 @@ const TIMEOUT_RELATO = 25 * 60 * 1000;
 
 const EVOLUTION_KEY = process.env.EVOLUTION_GLOBAL_API_KEY;
 
-async function processWebhook(payload) {
+// ===== SIMULADOR (WhatsApp mock) =====
+// Transcrição em memória das conversas simuladas + captura da saída do bot.
+// Quando `capturaAtiva` existe, as funções send* não disparam para a Evolution:
+// elas apenas devolvem a mensagem para o simulador renderizar no painel.
+const transcricoes = {};
+let capturaAtiva = null;
+
+function conversaSimulada(anonId, numero = null) {
+  if (!transcricoes[anonId]) {
+    transcricoes[anonId] = { numero, empresaId: null, mensagens: [] };
+  }
+  if (numero) transcricoes[anonId].numero = numero;
+  return transcricoes[anonId];
+}
+
+function registrarTranscricao(anonId, direcao, mensagem) {
+  const c = conversaSimulada(anonId);
+  c.mensagens.push({ direcao, ts: Date.now(), ...mensagem });
+  return mensagem;
+}
+
+async function processWebhook(payload, { simulacao = false, empresaIdForcado = null } = {}) {
   let empresaId_atual;
+  let outbox = null;
+  if (simulacao) outbox = capturaAtiva = [];
   try {
     const data = extractData(payload);
-    if (!data) return null;
+    if (!data) return outbox;
 
     const instanceName = payload.instance;
     const rawPhoneNumber = data.phoneNumber;
@@ -49,21 +72,35 @@ async function processWebhook(payload) {
     );
     console.log(`[EXTRAÇÃO] Comando recebido: ${text}`);
 
+    if (simulacao) {
+      conversaSimulada(anonId, rawPhoneNumber);
+      registrarTranscricao(anonId, "cidadão", { tipo: "texto", texto: text });
+    }
+
     const sessionExists = !!userStates[anonId];
 
     if (text !== "/start" && !sessionExists) {
       console.log(`[FILTRO] Mensagem ignorada: sem '/start' e sem sessão.`);
-      return null;
+      return outbox;
     }
 
     if (sessionExists) {
       empresaId_atual = userStates[anonId].empresaId;
+    } else if (simulacao && empresaIdForcado) {
+      // Simulador: a empresa já foi resolvida e validada externamente,
+      // então não precisamos rotear pela instância (evita falhar quando a
+      // empresa não tem instance_name ou está inativa).
+      empresaId_atual = empresaIdForcado;
+      conversaSimulada(anonId).empresaId = empresaId_atual;
     } else {
-      empresaId_atual = await getEmpresa(instanceName);
+      empresaId_atual = await getEmpresa(instanceName, {
+        ignorarStatus: simulacao,
+      });
       if (!empresaId_atual) {
         console.log("[ERRO] Empresa não encontrada ou inativa. Abortando.");
-        return null;
+        return outbox;
       }
+      if (simulacao) conversaSimulada(anonId).empresaId = empresaId_atual;
     }
 
     // Carrega os textos (override + fallback) SEMPRE — garante frescor
@@ -111,11 +148,16 @@ async function processWebhook(payload) {
       }
     }
 
-    if (userStates[anonId]) {
+    if (!simulacao && userStates[anonId]) {
       defTimeout(anonId, rawPhoneNumber, userStates[anonId].step);
     }
+
+    return outbox;
   } catch (error) {
     console.error("[ERRO GRAVE NO WEBHOOK]:", error);
+    return outbox;
+  } finally {
+    if (simulacao) capturaAtiva = null;
   }
 }
 
@@ -448,7 +490,7 @@ async function getCategories(empresaId) {
   }
 }
 
-async function getEmpresa(instanceName) {
+async function getEmpresa(instanceName, { ignorarStatus = false } = {}) {
   try {
     const { data, error } = await supabase
       .from("empresas")
@@ -467,7 +509,7 @@ async function getEmpresa(instanceName) {
       return null;
     }
 
-    if (data.status === false) {
+    if (data.status === false && !ignorarStatus) {
       console.log(
         `[ROTEAMENTO] Instância ${instanceName} pertence a uma empresa inativa.`,
       );
@@ -507,6 +549,13 @@ async function getTicket(protocol) {
 }
 
 async function sendWhatsappMessage(phoneNumber, messageText, instanceName) {
+  if (capturaAtiva) {
+    const msg = { tipo: "texto", texto: messageText };
+    capturaAtiva.push(msg);
+    registrarTranscricao(anonymizeUser(phoneNumber), "bot", msg);
+    return { capturado: true };
+  }
+
   if (process.env.DRY_RUN === "true") {
     console.log(`[DRY] 📤 TEXTO p/ ${phoneNumber}:\n${messageText}\n`);
     return { dryRun: true };
@@ -540,6 +589,25 @@ async function sendWhatsappMessage(phoneNumber, messageText, instanceName) {
 }
 
 async function sendWhatsappButtons(phoneNumber, payload, instanceName) {
+  if (capturaAtiva) {
+    const msg = {
+      tipo: "buttons",
+      numero: phoneNumber,
+      titulo: payload.title ?? null,
+      descricao: payload.description ?? null,
+      rodape: payload.footer ?? null,
+      botoes: (payload.buttons || []).map((b) => ({
+        id: b.id,
+        tipo: b.type || "reply",
+        displayText: b.displayText ?? null,
+        copyCode: b.copyCode ?? null,
+      })),
+    };
+    capturaAtiva.push(msg);
+    registrarTranscricao(anonymizeUser(phoneNumber), "bot", msg);
+    return { capturado: true };
+  }
+
   if (process.env.DRY_RUN === "true") {
     console.log(
       `[DRY] 📤 BOTÕES p/ ${phoneNumber}:`,
@@ -575,6 +643,28 @@ async function sendWhatsappButtons(phoneNumber, payload, instanceName) {
 }
 
 async function sendWhatsappList(phoneNumber, payload, instanceName) {
+  if (capturaAtiva) {
+    const msg = {
+      tipo: "list",
+      numero: phoneNumber,
+      titulo: payload.title ?? null,
+      descricao: payload.description ?? null,
+      botaoMenu: payload.buttonText ?? null,
+      rodape: payload.footerText ?? null,
+      secoes: (payload.sections || []).map((s) => ({
+        titulo: s.title ?? null,
+        linhas: (s.rows || []).map((r) => ({
+          id: r.rowId,
+          titulo: r.title,
+          descricao: r.description ?? null,
+        })),
+      })),
+    };
+    capturaAtiva.push(msg);
+    registrarTranscricao(anonymizeUser(phoneNumber), "bot", msg);
+    return { capturado: true };
+  }
+
   if (process.env.DRY_RUN === "true") {
     console.log(
       `[DRY] 📤 LISTA p/ ${phoneNumber}:`,
@@ -621,7 +711,7 @@ async function createTicket(empresaId, categoryId, text, ticketProtocolo) {
           categoria_id: categoryId,
           texto: text,
           protocol: ticketProtocolo,
-          status: "NOVO",
+          status: "aberto",
         },
       ])
       .select("id")
@@ -710,4 +800,68 @@ function defTimeout(anonId, rawPhoneNumber, stepAtual) {
   }, tempoLimite);
 }
 
-module.exports = { processWebhook };
+async function processSimulatorMessage({ empresaId, numero, texto }) {
+  try {
+    if (!empresaId || !numero || typeof texto !== "string")
+      return { erro: "Informe empresaId, numero e texto." };
+
+    const { data: empresa, error } = await supabase
+      .from("empresas")
+      .select("instance_name, status")
+      .eq("id", empresaId)
+      .maybeSingle();
+
+    if (error || !empresa) return { erro: "Empresa não encontrada." };
+    // No simulador o estado `status` (WhatsApp ativo/desativado) não bloqueia:
+    // é só o fluxo do bot sendo exercitado localmente, sem Evolution.
+    if (empresa.status === false) {
+      console.warn(
+        `[SIMULADOR] Empresa ${empresaId} está desativada, mas a simulação foi liberada (mock local).`
+      );
+    }
+    // Em simulação não dependemos da Evolution: se a empresa ainda não tem
+    // instância provisionada, usamos uma instância mock apenas para o fluxo.
+    const instanceName = empresa.instance_name || "mock-local";
+
+    const anonId = anonymizeUser(numero);
+    conversaSimulada(anonId, numero).empresaId = empresaId;
+
+    const payload = {
+      instance: instanceName,
+      data: {
+        key: { fromMe: false, remoteJid: `${numero}@s.whatsapp.net` },
+        message: { conversation: texto },
+      },
+    };
+
+    const outbox = await processWebhook(payload, {
+      simulacao: true,
+      empresaIdForcado: empresaId,
+    });
+
+    const c = conversaSimulada(anonId);
+    return { numero, mensagens: outbox || [], transcricao: c.mensagens };
+  } catch (error) {
+    console.error("[SIMULADOR] Erro:", error.message);
+    return { erro: "Falha interna no simulador: " + error.message };
+  }
+}
+
+function listarConversasSimuladas(empresaId) {
+  return Object.values(transcricoes)
+    .filter((c) => c.empresaId === empresaId && c.numero)
+    .map((c) => ({ numero: c.numero, mensagens: c.mensagens }));
+}
+
+function obterTranscricaoSimulada(empresaId, numero) {
+  const c = transcricoes[anonymizeUser(numero)];
+  if (!c || c.empresaId !== empresaId) return [];
+  return c.mensagens;
+}
+
+module.exports = {
+  processWebhook,
+  processSimulatorMessage,
+  listarConversasSimuladas,
+  obterTranscricaoSimulada,
+};

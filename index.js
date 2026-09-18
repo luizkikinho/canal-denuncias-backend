@@ -1,12 +1,36 @@
 const express = require("express");
-const { processWebhook } = require("./functions");
+const {
+  processWebhook,
+  processSimulatorMessage,
+  listarConversasSimuladas,
+  obterTranscricaoSimulada,
+} = require("./functions");
 const { exec } = require("child_process");
 const app = express(); // Ativa o servidor
 
 const supabase = require("./db");
 const evolution = require("./lib/evolution.js");
 
+// Simulador local: exige Bearer PROVISION_SECRET apenas quando a env está
+// definida. Assim rodar 100% local fica possível sem segredos; em produção
+// (Koyeb) o token continua obrigatório.
+const autorizadoSimulador = (req) =>
+  !process.env.PROVISION_SECRET ||
+  req.headers.authorization === `Bearer ${process.env.PROVISION_SECRET}`;
+
 app.use(express.json());
+
+// CORS: permite o painel (Vite: localhost:5173) falar com este backend local.
+app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization"
+    );
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+});
 
 app.get("/health", (req, res) => {
     res.status(200).json({status: "ok", uptime: process.uptime()})
@@ -69,6 +93,35 @@ app.post("/webhook", async (req, res) => {
 
     const result = await processWebhook(payload);
     res.status(200).json(result);
+});
+
+// ===== Simulador de WhatsApp (mock) =====
+// O painel envia aqui a mensagem digitada pelo "cidadão" e recebe a
+// saída do bot (texto/botões/listas) para renderizar na tela.
+app.post("/simular", async (req, res) => {
+    if (!autorizadoSimulador(req)) {
+        return res.status(401).json({ error: "Não autorizado" });
+    }
+
+    const { empresaId, numero, texto } = req.body || {};
+    const resultado = await processSimulatorMessage({ empresaId, numero, texto });
+    if (resultado.erro) return res.status(400).json({ error: resultado.erro });
+    return res.status(200).json(resultado);
+});
+
+app.get("/simular/:empresaId", async (req, res) => {
+    if (!autorizadoSimulador(req)) {
+        return res.status(401).json({ error: "Não autorizado" });
+    }
+
+    const numero = req.query.numero;
+    if (numero) {
+        const mensagens = obterTranscricaoSimulada(req.params.empresaId, String(numero));
+        return res.status(200).json({ numero, mensagens });
+    }
+
+    const conversas = listarConversasSimuladas(req.params.empresaId);
+    return res.status(200).json({ conversas });
 });
 
 app.post("/deploy-hook", (req, res) => {
