@@ -2,7 +2,7 @@
 
 Backend do sistema de recebimento de denúncias anônimas via WhatsApp. É esta API que recebe os webhooks da Evolution API, conduz a conversa com o cidadão (máquina de estados) e grava os chamados no Supabase — sempre sem armazenar nenhum dado que identifique o remetente.
 
-Projeto desenvolvido como trabalho de conclusão de curso (TG 2). O painel administrativo (`painel-chamados`, React + Supabase) é um repositório irmão.
+Projeto desenvolvido como trabalho de conclusão de curso (TG 2). O painel administrativo (`canal-denuncias-painel`, React + Supabase) é um repositório irmão.
 
 ## Como funciona
 
@@ -69,7 +69,7 @@ npm install
 node index.js          # servidor na porta 8000
 ```
 
-Requisitos: Node.js 18+ e um projeto Supabase com as tabelas `chamados`, `registro_chamados`, `empresas`, `categorias` e `mensagens_bot` (scripts SQL no repositório `painel-chamados`).
+Requisitos: Node.js 18+ e um projeto Supabase com as tabelas `chamados`, `registro_chamados`, `empresas`, `categorias` e `mensagens_bot` (scripts SQL no repositório `canal-denuncias-painel`).
 
 Modo desenvolvimento: com `DRY_RUN=true` (ou sem as envs da Evolution) o servidor sobe normalmente e apenas loga os disparos; o fluxo completo pode ser exercitado pelo **Simulador de WhatsApp** do painel.
 
@@ -89,7 +89,7 @@ Modo desenvolvimento: com `DRY_RUN=true` (ou sem as envs da Evolution) o servido
 
 ## Integração com o painel
 
-O `painel-chamados` consome este backend pelas Edge Functions do Supabase (`create-empresa`, `get-qr-empresa`, `simular-whatsapp`), que repassam as requisições com `Bearer PROVISION_SECRET` — o navegador nunca fala diretamente com a Evolution API.
+O `canal-denuncias-painel` consome este backend pelas Edge Functions do Supabase (`create-empresa`, `get-qr-empresa`, `simular-whatsapp`), que repassam as requisições com `Bearer PROVISION_SECRET` — o navegador nunca fala diretamente com a Evolution API.
 
 ## Licença
 
